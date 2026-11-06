@@ -213,7 +213,25 @@ no hay que hacer es bajar la severidad de la compuerta para que pase.
 
 ### En GitHub Actions
 
-<!-- CI-BITACORA -->
+**Fecha:** 06/11/2026 (UTC). Runner `ubuntu-24.04`.
+
+| Corrida | Resultado | Duración | Qué dejó |
+|---|---|---|---|
+| `ci` — push a `main` | ✅ | 1 m 51 s (calidad 16 s · imagen 89 s) | `ghcr.io/seamnex/cicd-pipeline:main` y `:sha-b917758` |
+| `release` — tag `v0.1.0` | ✅ 4/4 jobs | 1 m 37 s | `:0.1.0`, `:0.1`, `:latest` + [GitHub Release](https://github.com/seamnex/cicd-pipeline/releases/tag/v0.1.0) con `sbom.cdx.json` |
+| `ci` — [PR #1](https://github.com/seamnex/cicd-pipeline/pull/1), base `node:24-alpine` | ❌ **frenado a propósito** | — | `Total: 6 (HIGH: 6, CRITICAL: 0)` en la compuerta; no se publicó nada |
+
+Tres comprobaciones que no dependen de mirar el tilde verde:
+
+- **La compuerta frena lo que tiene que frenar.** El PR #1 existe solo para eso:
+  cambia la base a Alpine y el pipeline lo rechazó con las **mismas 6 HIGH**
+  que el escaneo local (4 en `undici`, 2 en `brace-expansion`, todas dentro de
+  `usr/local/lib/node_modules/npm/`). Un control que nunca vi fallar es un
+  control que no sé si funciona.
+- **El reporte de la pestaña Security cierra con el escaneo local:** 45 hallazgos
+  en code scanning, igual a 1 HIGH + 36 MEDIUM + 8 LOW del escaneo en mi máquina.
+- **La imagen es pública de verdad:** `docker pull ghcr.io/seamnex/cicd-pipeline:main`
+  sin login funciona. El paquete heredó la visibilidad del repo.
 
 ---
 
