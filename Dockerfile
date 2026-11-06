@@ -7,7 +7,7 @@
 # Fijada por digest además del tag: el tag `nonroot` se mueve con cada parche
 # de Debian, y un build que hoy pasa el escaneo podría no pasarlo mañana sin
 # que nadie haya tocado el repo. Actualizar el digest es un cambio explícito.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:b8cec4b2f2126ff7bd034ec9ac207ffb3272667dfdc48376e3b035d3270549ba
+FROM node:24-alpine
 
 # La app no tiene dependencias de runtime, así que no hay `npm ci` ni etapa de
 # build: se copia el código y nada más. node_modules (eslint, globals) es solo
@@ -30,7 +30,7 @@ USER 65532:65532
 
 # Sin curl ni wget en distroless: el healthcheck usa el propio node.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
-  CMD ["/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # El ENTRYPOINT de la base ya es /nodejs/bin/node.
-CMD ["src/server.js"]
+CMD ["node", "src/server.js"]
