@@ -1,0 +1,9 @@
+# Todo lo que no es código de runtime queda afuera del contexto de build.
+node_modules
+test
+coverage
+docs
+.git
+.github
+*.md
+eslint.config.js

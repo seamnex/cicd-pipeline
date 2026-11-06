@@ -1,0 +1,37 @@
+# Pipeline de integración continua.
+#
+#   pull request -> calidad -> imagen (build + escaneo, sin publicar)
+#   push a main  -> calidad -> imagen (build + escaneo + push a GHCR)
+#
+# Un PR ejercita exactamente el mismo camino que main salvo el push: si la
+# imagen de un PR no pasa Trivy, se ve en el PR y no después del merge.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Dos pushes seguidos a la misma rama: el primero ya no importa, se cancela.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  calidad:
+    uses: ./.github/workflows/calidad.yml
+
+  imagen:
+    needs: calidad
+    uses: ./.github/workflows/imagen.yml
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    with:
+      publicar: ${{ github.event_name == 'push' }}

@@ -1,0 +1,52 @@
+# Workflow reutilizable: lint, tests y escaneo de configuración.
+#
+# Lo llaman ci.yml (cada push y PR) y release.yml (cada tag). Vive en un solo
+# lugar para que el release no pueda tener una vara distinta —y más baja— que
+# la de todos los días.
+
+name: calidad
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  calidad:
+    name: Lint, tests y config
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Instalar dependencias
+        # `npm ci` y no `npm install`: respeta el lockfile al pie de la letra y
+        # falla si package.json y package-lock.json no coinciden.
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests con cobertura
+        # El script falla si la cobertura de líneas baja del 80 %.
+        run: npm test
+
+      - name: Escanear la configuración (Dockerfile)
+        # Antes de construir nada: un Dockerfile que corre como root o que baja
+        # binarios sin verificar se frena acá, no después de publicado.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: '1'

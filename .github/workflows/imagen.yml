@@ -1,0 +1,163 @@
+# Workflow reutilizable: construir, escanear y (opcionalmente) publicar.
+#
+# La regla que ordena todo el archivo: **lo que se publica es exactamente lo
+# que se escaneó**. La imagen se construye una sola vez, se carga en el daemon
+# local, Trivy la escanea ahí y el push sube esa misma imagen. Construir de
+# nuevo para publicar abriría la puerta a que la imagen escaneada y la
+# publicada sean distintas (otra capa base, otro paquete) sin que nadie lo vea.
+
+name: imagen
+
+on:
+  workflow_call:
+    inputs:
+      publicar:
+        description: Si es true, sube la imagen a GHCR después del escaneo.
+        type: boolean
+        default: false
+    outputs:
+      tags:
+        description: Tags generados para la imagen.
+        value: ${{ jobs.imagen.outputs.tags }}
+
+permissions:
+  contents: read
+
+jobs:
+  imagen:
+    name: Build, escaneo y push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      packages: write         # push a ghcr.io
+      security-events: write  # subir el SARIF de Trivy a la pestaña Security
+
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+
+    env:
+      IMAGEN: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Calcular tags y labels
+        id: meta
+        # Una sola lista de reglas para todos los eventos; cada evento usa las
+        # que le corresponden:
+        #   push a main   -> main, sha-abc1234
+        #   pull request  -> pr-12 (se construye y escanea, nunca se publica)
+        #   tag v1.4.2    -> 1.4.2, 1.4, latest, sha-abc1234
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGEN }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Construir la imagen (sin publicar)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prueba de humo del contenedor
+        # Que compile no significa que arranque. Diez segundos de verificación
+        # atrapan el CMD mal escrito o el archivo que el .dockerignore dejó afuera.
+        # La versión entra por env y no interpolada en el script: viene del
+        # nombre de la rama, y un nombre de rama es texto que escribe cualquiera.
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          docker run -d --name humo -p 8080:8080 "${IMAGEN}:${VERSION}"
+          for _ in $(seq 1 10); do
+            if curl -sf http://127.0.0.1:8080/healthz; then echo; break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8080/api/v1/status
+          echo
+          docker rm -f humo
+
+      - name: Compuerta de vulnerabilidades
+        # Falla el pipeline solo por CRITICAL/HIGH **con fix disponible**. Una
+        # CVE sin parche no se resuelve bloqueando el deploy: se resuelve
+        # cuando sale el parche, y para eso está el reporte completo de abajo.
+        # Bloquear por lo que no se puede arreglar entrena al equipo a saltear
+        # la compuerta, que es peor que no tenerla.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: ${{ env.IMAGEN }}:${{ steps.meta.outputs.version }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      - name: Reporte completo (SARIF)
+        # Todas las severidades, con y sin fix, a la pestaña Security del repo.
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: ${{ env.IMAGEN }}:${{ steps.meta.outputs.version }}
+          format: sarif
+          output: trivy.sarif
+          exit-code: '0'
+          skip-setup-trivy: true
+
+      - name: Subir SARIF a code scanning
+        # Un PR desde un fork no tiene permiso de escritura: el reporte se
+        # salta ahí en vez de romper el pipeline del colaborador.
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-imagen
+
+      - name: SBOM (CycloneDX)
+        # El inventario de lo que lleva la imagen. Cuando aparezca la próxima
+        # CVE grave, la pregunta "¿estamos afectados?" se contesta leyendo
+        # este archivo, no reconstruyendo la imagen.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: ${{ env.IMAGEN }}:${{ steps.meta.outputs.version }}
+          format: cyclonedx
+          output: sbom.cdx.json
+          exit-code: '0'
+          skip-setup-trivy: true
+
+      - name: Guardar SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 30
+
+      - name: Login a GHCR
+        if: inputs.publicar
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN efímero del job: no hay ningún secreto guardado en el repo.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publicar la imagen escaneada
+        if: inputs.publicar
+        run: docker push --all-tags "${IMAGEN}"

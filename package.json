@@ -1,0 +1,24 @@
+{
+  "name": "status-api",
+  "version": "0.1.0",
+  "description": "API de estado mínima sobre la que corre el pipeline de CI/CD",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "lint": "eslint .",
+    "test": "node --test --experimental-test-coverage --test-coverage-lines=80 test/*.test.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "globals": "17.14.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.5"
+  }
+}

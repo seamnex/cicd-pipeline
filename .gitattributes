@@ -1,0 +1,4 @@
+# Los workflows y el Dockerfile se ejecutan en Linux: siempre LF, aunque el
+# clon sea en Windows con core.autocrlf=true.
+* text=auto eol=lf
+*.png binary
