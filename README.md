@@ -9,9 +9,9 @@ Pipeline de GitHub Actions que lleva una API chica desde el commit hasta una
 imagen **escaneada** y publicada en GitHub Container Registry, con releases por tag.
 
 > Parte de mi ruta de especialización en SRE / DevOps.
-> Contexto: vengo de gestión de incidentes P1/P2, donde una parte grande de los
-> incidentes arranca con un cambio. Acá practico el otro lado: el camino que
-> recorre ese cambio antes de llegar a producción.
+> Contexto: vengo de gestión de incidentes P1/P2, donde "¿qué cambió?" es una
+> de las primeras preguntas de cualquier War Room. Acá practico el otro lado: el
+> camino que recorre un cambio antes de llegar a producción.
 
 ---
 
